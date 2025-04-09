@@ -1,28 +1,72 @@
 pipeline {
-    agent any
-    options {
-        skipStagesAfterUnstable()
+  agent any
+
+  environment {
+    IMAGE_NAME = "your-docker-repo/your-app"
+    VERSION = "${env.BUILD_NUMBER}"
+    ECR_REPO = "your-aws-account-id.dkr.ecr.region.amazonaws.com/your-app"
+    K8S_MANIFEST_PATH = "k8s/deployment.yaml"
+    KUBECONFIG_CREDENTIAL_ID = "kubeconfig"
+  }
+
+  triggers {
+    githubPush()
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git branch: "${env.BRANCH_NAME}", url: 'https://github.com/mohansiva98/simple-java-maven-app.git'
+      }
     }
-    stages {
-        stage('Build') {
-            steps {
-                sh 'mvn -B -DskipTests clean package'
-            }
-        }
-        stage('Test') {
-            steps {
-                sh 'mvn test'
-            }
-            post {
-                always {
-                    junit 'target/surefire-reports/*.xml'
-                }
-            }
-        }
-        stage('Deliver') { 
-            steps {
-                sh './jenkins/scripts/deliver.sh' 
-            }
-        }
+
+    stage('Build') {
+      steps {
+        sh 'mvn clean package'
+      }
     }
+
+    stage('Docker Build & Push') {
+      steps {
+        script {
+          sh """
+            docker build -t $ECR_REPO:$VERSION .
+            aws ecr get-login-password --region region | docker login --username AWS --password-stdin $ECR_REPO
+            docker push $ECR_REPO:$VERSION
+          """
+        }
+      }
+    }
+
+    stage('Update K8s Manifest') {
+      steps {
+        script {
+          sh """
+            sed -i 's|image:.*|image: $ECR_REPO:$VERSION|' $K8S_MANIFEST_PATH
+          """
+        }
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        withCredentials([file(credentialsId: "$KUBECONFIG_CREDENTIAL_ID", variable: 'KUBECONFIG')]) {
+          sh 'kubectl apply -f $K8S_MANIFEST_PATH'
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      mail to: 'your-team@example.com',
+           subject: "✅ SUCCESS: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+           body: "Build succeeded. Branch: ${env.BRANCH_NAME}"
+    }
+    failure {
+      mail to: 'your-team@example.com',
+           subject: "❌ FAILED: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
+           body: "Build failed. Branch: ${env.BRANCH_NAME}"
+    }
+  }
 }
