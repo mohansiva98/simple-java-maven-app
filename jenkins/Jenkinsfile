@@ -64,7 +64,7 @@ pipeline {
            body: "Build succeeded. Branch: ${env.BRANCH_NAME}"
     }
     failure {
-      mail to: 'your-team@example.com',
+      mail to: 'official.mohansivam98@gmail.com',
            subject: "❌ FAILED: ${env.JOB_NAME} - ${env.BUILD_NUMBER}",
            body: "Build failed. Branch: ${env.BRANCH_NAME}"
     }
